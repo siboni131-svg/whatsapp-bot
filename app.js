@@ -7,10 +7,17 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// ===== ENV =====
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const GREEN_API_URL = process.env.GREEN_API_URL; // לדוגמה: https://7105.api.greenapi.com
 const GREEN_API_TOKEN = process.env.GREEN_API_TOKEN;
 const GREEN_INSTANCE_ID = process.env.GREEN_INSTANCE_ID;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("Missing Supabase ENV variables");
+  process.exit(1);
+}
 
 const supabase = createClient(
   SUPABASE_URL,
@@ -26,11 +33,14 @@ app.post("/webhook", async (req, res) => {
     const payload = req.body;
 
     const chatId = payload?.senderData?.chatId;
+
+    // חסימת קבוצות
     if (!chatId || chatId.includes("@g.us")) {
       return res.status(200).json({ ok: true });
     }
 
     let phone = payload?.senderData?.sender;
+
     if (phone.includes("@")) {
       phone = phone.split("@")[0];
     }
@@ -40,33 +50,31 @@ app.post("/webhook", async (req, res) => {
       payload?.messageData?.extendedTextMessage?.text ||
       "";
 
-    // חיפוש לקוח
+    // ===== חיפוש לקוח =====
     let { data: customer } = await supabase
       .from("customers")
       .select("*")
       .eq("phone", phone)
-      .single();
+      .maybeSingle();
 
-    // אם לא קיים – ליצור חדש
+    // אם לא קיים → ליצור
     if (!customer) {
-      const { data } = await supabase
+      const { data: newCustomer } = await supabase
         .from("customers")
         .insert([{ phone, step: "start" }])
         .select()
         .single();
 
-      customer = data;
+      customer = newCustomer;
     }
 
-    let nextStep = customer.step;
     let reply = "";
+    let nextStep = customer.step;
 
     // ===== ניהול שלבים =====
 
     if (customer.step === "start") {
-      reply =
-        "היי 🙌 ברוך הבא ל-Eden Limousine\n\n" +
-        "מה התאריך של האירוע?";
+      reply = "היי 🙌 ברוך הבא ל-Eden Limousine\n\nמה התאריך של האירוע?";
       nextStep = "date";
     }
 
@@ -111,17 +119,18 @@ app.post("/webhook", async (req, res) => {
         .update({ destination: message })
         .eq("phone", phone);
 
-      reply =
-        "מעולה 🙌\nקיבלנו את כל הפרטים.\nנציג יחזור אליך בהקדם!";
+      reply = "מעולה 🙌 קיבלנו את כל הפרטים. נציג יחזור אליך בהקדם!";
       nextStep = "done";
     }
 
+    // עדכון שלב
     await supabase
       .from("customers")
       .update({ step: nextStep })
       .eq("phone", phone);
 
-    const url = `https://${GREEN_INSTANCE_ID}.api.greenapi.com/waInstance${GREEN_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`;
+    // ===== שליחת הודעה ל-WhatsApp =====
+    const url = `${GREEN_API_URL}/waInstance${GREEN_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`;
 
     await axios.post(url, {
       chatId: chatId,
@@ -131,8 +140,8 @@ app.post("/webhook", async (req, res) => {
     res.status(200).json({ ok: true });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "error" });
+    console.error("Webhook error:", err.message);
+    res.status(500).json({ error: "server error" });
   }
 });
 
