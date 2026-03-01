@@ -16,15 +16,14 @@ const PORT = process.env.PORT || 3000;
 // Validate required env vars early
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');
   process.exit(1);
 }
 
 // Supabase client using service_role key (has full DB permissions; keep secret)
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  // optional: set a custom fetch or other options here
-});
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // Middleware
 app.use(express.json()); // parse application/json
@@ -35,28 +34,24 @@ app.get('/', (req, res) => {
 });
 
 // Webhook endpoint
-// Assumes Green API sends JSON body. Adjust parsing/field names if their payload differs.
 app.post('/webhook', async (req, res) => {
   try {
     const payload = req.body || {};
 
-    /*
-      Example Green API payloads vary; common fields:
-      - sender (or from) / fromNumber
-      - message text might be in message, body, text, or messageData.textMessageData.textMessage
-      - media info might be in messageData.extendedTextMessage, messageData.media, or an array of attachments
+    // Log payload (optional) - can be noisy, comment out if too much
+    console.log('Webhook received:', JSON.stringify(payload));
 
-      Below we attempt to extract common fields safely. If your actual Green API payload differs,
-      update the extraction logic accordingly.
-    */
-
-    // Try several common places for "from" number:
+    // ✅ FIX: Green API sender is inside senderData.sender / senderData.chatId
     const fromCandidates = [
+      payload?.senderData?.sender,
+      payload?.senderData?.chatId,
+
+      // fallbacks (in case payload format changes)
       payload.from,
       payload.sender,
       payload.fromNumber,
       payload.from_number,
-      payload.chatId, // sometimes contains number@c.us
+      payload.chatId,
       payload?.message?.from,
     ];
 
@@ -73,14 +68,16 @@ app.post('/webhook', async (req, res) => {
       from_number = from_number.split('@')[0];
     }
 
-    // Try several common places for text body
+    // ✅ Green API text is usually here:
+    // payload.messageData.textMessageData.textMessage
     const bodyCandidates = [
+      payload?.messageData?.textMessageData?.textMessage,
+
+      // fallbacks
       payload.body,
       payload.message,
       payload.text,
       payload?.message?.text,
-      // Green API sometimes nests content; try typical paths:
-      payload?.messageData?.textMessageData?.textMessage,
       payload?.messageData?.extendedTextMessage?.text,
       payload?.messageData?.textMessage,
     ];
@@ -91,7 +88,6 @@ app.post('/webhook', async (req, res) => {
         bodyText = b;
         break;
       }
-      // sometimes text is an object with 'text' property
       if (b && typeof b === 'object') {
         if (typeof b.text === 'string' && b.text.trim() !== '') {
           bodyText = b.text;
@@ -100,9 +96,9 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // Try to detect media. We'll attempt to find a URL or file id in several common fields.
+    // Try to detect media (optional)
     const mediaCandidates = [
-      payload.media, // simple
+      payload.media,
       payload.attachments,
       payload?.messageData?.imageMessage?.url,
       payload?.messageData?.videoMessage?.url,
@@ -116,9 +112,7 @@ app.post('/webhook', async (req, res) => {
 
     let mediaValue = null;
 
-    // If attachments is an array, join URLs (or keep first)
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
-      // prefer URL-like items
       const urls = payload.attachments
         .map(a => {
           if (!a) return null;
@@ -129,44 +123,38 @@ app.post('/webhook', async (req, res) => {
           return null;
         })
         .filter(Boolean);
-      if (urls.length > 0) {
-        mediaValue = urls.join(','); // store comma-separated list
-      } else {
-        // fallback to JSON stringify attachments
-        mediaValue = JSON.stringify(payload.attachments);
-      }
+
+      mediaValue = urls.length > 0 ? urls.join(',') : JSON.stringify(payload.attachments);
     } else {
-      // try other candidates in order
       for (const m of mediaCandidates) {
         if (!m) continue;
+
         if (typeof m === 'string' && m.trim() !== '') {
           mediaValue = m;
           break;
         }
+
         if (Array.isArray(m) && m.length > 0) {
-          // pick first URL-like entry or join them
-          const urls = m.map(item => {
-            if (!item) return null;
-            if (typeof item === 'string') return item;
-            if (item.url) return item.url;
-            if (item.downloadUrl) return item.downloadUrl;
-            if (item.fileUrl) return item.fileUrl;
-            return null;
-          }).filter(Boolean);
+          const urls = m
+            .map(item => {
+              if (!item) return null;
+              if (typeof item === 'string') return item;
+              if (item.url) return item.url;
+              if (item.downloadUrl) return item.downloadUrl;
+              if (item.fileUrl) return item.fileUrl;
+              return null;
+            })
+            .filter(Boolean);
+
           if (urls.length > 0) {
             mediaValue = urls.join(',');
             break;
           }
         }
+
         if (typeof m === 'object') {
-          // look for properties that might contain a URL/id
           const url = m.url || m.downloadUrl || m.fileUrl || m.id || m.mediaUrl;
-          if (url) {
-            mediaValue = String(url);
-            break;
-          }
-          // otherwise, store JSON
-          mediaValue = JSON.stringify(m);
+          mediaValue = url ? String(url) : JSON.stringify(m);
           break;
         }
       }
@@ -176,36 +164,31 @@ app.post('/webhook', async (req, res) => {
     if (mediaValue === '' || mediaValue === '[]' || mediaValue === '{}') mediaValue = null;
     if (bodyText && bodyText.trim() === '') bodyText = null;
 
-    // Ensure we have at least the from_number or something to store
+    // Must have sender
     if (!from_number) {
-      // If you prefer to reject when missing sender, change to 400
       console.warn('Webhook received without a recognizable sender:', JSON.stringify(payload));
-      // still allow storing if body or media present? Here we'll reject.
       return res.status(400).json({ error: 'missing from number in payload' });
     }
 
     // Prepare row to insert
     const row = {
-      id: undefined, // let DB generate uuid if default is set. If not, you can add require uuid here.
+      // id: omitted -> let DB default gen_random_uuid() fill it
       from_number: from_number,
       body: bodyText || null,
       media: mediaValue || null,
-      // created_at can be filled by DB default (now()); omit to let DB set it
+      // created_at omitted -> let DB default now() fill it
     };
 
-    // Insert into messages table
-    const { data, error } = await supabase
-      .from('messages')
-      .insert([row]);
+    const { data, error } = await supabase.from('messages').insert([row]).select();
 
     if (error) {
       console.error('Supabase insert error:', error);
-      return res.status(500).json({ error: 'database_insert_failed', details: error.message || error });
+      return res
+        .status(500)
+        .json({ error: 'database_insert_failed', details: error.message || String(error) });
     }
 
-    // Successful insert
     return res.status(201).json({ ok: true, inserted: data });
-
   } catch (err) {
     console.error('Webhook processing error:', err && err.stack ? err.stack : err);
     return res.status(500).json({ error: 'internal_server_error' });
@@ -217,7 +200,7 @@ app.use((req, res) => {
   res.status(404).json({ error: 'not_found' });
 });
 
-// Generic error handler (for errors thrown from middleware/routes)
+// Generic error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err && err.stack ? err.stack : err);
   res.status(500).json({ error: 'internal_server_error' });
