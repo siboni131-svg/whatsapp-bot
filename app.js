@@ -67,36 +67,37 @@ function eventFromChoice(text) {
     case "6":
       return "נציג";
     default:
-      // אם כתב טקסט חופשי במקום מספר
       return t;
   }
 }
 
-function buildFinalMessage({ name, date, eventType, pickupText, destination }) {
-  return (
-    `תודה רבה, ${name}! 🙌\n\n` +
-    `הפרטים שלך נקלטו בהצלחה במערכת Eden Limousine 🚘✨\n\n` +
-    `📅 תאריך: ${date}\n` +
-    `🎉 אירוע: ${eventType}\n` +
-    `📍 ${pickupText}\n` +
-    `🏛 יעד/אולם: ${destination}\n\n` +
-    `להלן מה שכלול בלימוזינה שלנו:\n\n` +
-    `📺 2 מסכי צפייה\n` +
-    `📍 אינטרנט קבוע\n` +
-    `🎤 קריוקי\n` +
-    `🍾 שמפניה / וודקה\n` +
-    `🫗 אקס ל\n` +
-    `🧊 קרח\n` +
-    `🥂 שתייה קלה מכל הסוגים\n` +
-    `📸 צילום סושיאל בלימוזינה\n` +
-    `👨‍✈️ נהג צמוד\n` +
-    `🎀 קישוט ידיות הרכב\n\n` +
-    `נציג מטעמנו יצור איתך קשר בהקדם לאישור סופי ולסגירת הפרטים 📞\n\n` +
-    `אנו מזמינים אותך לעקוב אחרינו ברשתות החברתיות:\n` +
-    `📸 אינסטגרם: https://www.instagram.com/edenlimousine\n` +
-    `🎵 טיק טוק: https://www.tiktok.com/@edenlimousine\n\n` +
-    `אם יש לך שאלות נוספות — אני כאן 😊`
-  );
+function buildFinalMessages({ name, date, eventType, pickupText, destination, photos }) {
+  // הודעה ראשונה – סיכום ההזמנה
+  const summary = 
+    `🎉 שלום ${name}!\n\n` +
+    `תודה שפניתם ל-Eden Limousine 🚘✨\n\n` +
+    `📅 תאריך האירוע: ${date}\n` +
+    `🎈 סוג האירוע: ${eventType}\n` +
+    `📍 איסוף: ${pickupText}\n` +
+    (destination ? `🏛 יעד/הורדה: ${destination}\n` : "") +
+    (photos !== undefined ? `האם היו צילומים לאירוע? ${photos}\n` : "") +
+    `\nבין השירותים שלנו:\n` +
+    `- 2 מסכי צפייה\n` +
+    `- אינטרנט מהיר\n` +
+    `- קריוקי מהנה\n` +
+    `- שתייה קלה ומוגזת\n` +
+    `- צילום סושיאל בלימוזינה\n` +
+    `- נהג צמוד\n` +
+    `- קישוט ידיות הרכב`;
+
+  // הודעה שנייה – קריאה לעקוב + נציג
+  const followup = 
+    `📸 עקוב אחרינו ברשתות החברתיות:\n` +
+    `Instagram: https://www.instagram.com/edenlimousine\n` +
+    `TikTok: https://www.tiktok.com/@edenlimousine\n\n` +
+    `נציג מטעמנו יצור איתך קשר בקרוב 📞`;
+
+  return [summary, followup];
 }
 
 app.get("/", (req, res) => {
@@ -107,56 +108,35 @@ app.post("/webhook", async (req, res) => {
   try {
     const payload = req.body;
 
-    // ✅ 1) סינון: להגיב רק להודעות נכנסות אמיתיות
     if (payload?.typeWebhook !== "incomingMessageReceived") {
       return res.status(200).json({ ok: true, ignored: "not incomingMessageReceived" });
     }
 
     const chatId = payload?.senderData?.chatId;
-
-    // ✅ 2) חסימת קבוצות/חוסר chatId
     if (!chatId || chatId.includes("@g.us")) {
       return res.status(200).json({ ok: true, ignored: "group or no chatId" });
     }
 
-    // ✅ 3) חילוץ טלפון והמרה ל-972
     const senderRaw = payload?.senderData?.sender || payload?.senderData?.chatId || "";
     const phone972 = normalizeTo972(senderRaw);
-
-    // ✅ 4) חילוץ טקסט
     const message = extractText(payload).trim();
-
-    if (!message) {
-      console.log("ℹ️ Incoming webhook without text. Skipping reply.");
-      return res.status(200).json({ ok: true, ignored: "no text message" });
-    }
+    if (!message) return res.status(200).json({ ok: true, ignored: "no text message" });
 
     console.log("📩 Incoming:", { chatId, phone972, message });
 
     // ===== חיפוש/יצירת לקוח =====
-    let { data: customer, error: findErr } = await supabase
+    let { data: customer } = await supabase
       .from("customers")
       .select("*")
       .eq("phone", phone972)
       .maybeSingle();
 
-    if (findErr) {
-      console.error("❌ Supabase find error:", findErr.message);
-      return res.status(200).json({ ok: true });
-    }
-
     if (!customer) {
-      const { data: newCustomer, error: insertErr } = await supabase
+      const { data: newCustomer } = await supabase
         .from("customers")
         .insert([{ phone: phone972, step: "start" }])
         .select()
         .single();
-
-      if (insertErr) {
-        console.error("❌ Supabase insert error:", insertErr.message);
-        return res.status(200).json({ ok: true });
-      }
-
       customer = newCustomer;
     }
 
@@ -168,19 +148,13 @@ app.post("/webhook", async (req, res) => {
           step: "start",
           event_date: null,
           event_type: null,
-          pickup_who: null,
           pickup_location: null,
-          pickup1_location: null,
-          pickup2_location: null,
           destination: null,
           customer_name: null,
         })
         .eq("phone", phone972);
 
-      await sendGreenMessage(
-        chatId,
-        "מעולה 👌 מתחילים מחדש.\n\nמה התאריך של האירוע?\nלדוגמא: 01/01/2026"
-      );
+      await sendGreenMessage(chatId, "מעולה 👌 מתחילים מחדש.\n\nמה התאריך של האירוע?");
       return res.status(200).json({ ok: true, reset: true });
     }
 
@@ -189,120 +163,61 @@ app.post("/webhook", async (req, res) => {
 
     // ===== ניהול שלבים =====
     if (customer.step === "start") {
-      reply =
-        "שלום וברכה! 👋\n" +
-        "תודה שפנית ל-Eden Limousine 🚘✨\n\n" +
-        "מה התאריך של האירוע שלכם?\n" +
-        "לדוגמא: 01/01/2026";
+      reply = "שלום וברכה! 👋\nמה התאריך של האירוע שלכם? (לדוגמה: 01/01/2026)";
       nextStep = "date";
     }
-
     else if (customer.step === "date") {
       await supabase.from("customers").update({ event_date: message }).eq("phone", phone972);
-
-      reply =
-        "תודה! קיבלתי ✅\n\n" +
-        "איזה סוג אירוע זה?\n" +
-        "1️⃣ חתונה 💍\n" +
-        "2️⃣ בר/בת מצווה 🎉\n" +
-        "3️⃣ יום הולדת 🎂\n" +
-        "4️⃣ נשף 🎓\n" +
-        "5️⃣ אירוע מיוחד ⭐\n" +
-        "6️⃣ נציג אנושי 📞";
+      reply = "איזה סוג אירוע זה?\n1️⃣ חתונה 💍\n2️⃣ בר/בת מצווה 🎉\n3️⃣ יום הולדת 🎂\n4️⃣ נשף 🎓\n5️⃣ אירוע מיוחד ⭐\n6️⃣ נציג אנושי 📞";
       nextStep = "event";
     }
-
     else if (customer.step === "event") {
       const eventType = eventFromChoice(message);
-
-      // 6 = נציג
       if (eventType === "נציג") {
-        reply = "מעולה 👌\nנציג מטעמנו יחזור אליך בהקדם 📞";
+        reply = "מעולה 👌 נציג מטעמנו יחזור אליך בהקדם 📞";
         nextStep = "done";
       } else {
         await supabase.from("customers").update({ event_type: eventType }).eq("phone", phone972);
-
         if (eventType === "חתונה") {
-          reply =
-            "מזל טוב! 🎉💍\n" +
-            "אנחנו מתרגשים לקחת חלק ביום המיוחד שלכם ✨🚘\n\n" +
-            "את מי אוספים?\n" +
-            "1️⃣ חתן\n" +
-            "2️⃣ כלה\n" +
-            "3️⃣ חתן וכלה";
+          reply = "מזל טוב! 🎉💍 מי אוספים?\n1️⃣ חתן\n2️⃣ כלה\n3️⃣ חתן וכלה";
           nextStep = "wedding_pickwho";
         } else {
-          reply = "מעולה 🙌\nמאיפה האיסוף? (עיר או כתובת כללית)";
+          reply = "מעולה 🙌 מאיפה האיסוף? (עיר או כתובת כללית)";
           nextStep = "pickup";
         }
       }
     }
-
-    // חתונה: מי אוספים
     else if (customer.step === "wedding_pickwho") {
       const choice = String(message).trim();
-      if (!["1", "2", "3"].includes(choice)) {
-        reply = "כדי שנמשיך, שלחו רק 1, 2 או 3 🙏";
+      if (!["1","2","3"].includes(choice)) {
+        reply = "שלחו רק 1, 2 או 3 🙏";
         nextStep = "wedding_pickwho";
       } else {
         await supabase.from("customers").update({ pickup_who: choice }).eq("phone", phone972);
-
-        if (choice === "1") {
-          reply = "מעולה 🙌\nמאיפה אוספים את החתן? (עיר או כתובת כללית)";
-        } else if (choice === "2") {
-          reply = "מעולה 🙌\nמאיפה אוספים את הכלה? (עיר או כתובת כללית)";
-        } else {
-          reply = "מעולה 🙌\nמאיפה אוספים את החתן? (עיר או כתובת כללית)";
-        }
+        reply = choice === "1" ? "איפה האיסוף של החתן?" :
+                choice === "2" ? "איפה האיסוף של הכלה?" :
+                "איפה האיסוף של החתן והכלה?";
         nextStep = "wedding_pickup1";
       }
     }
-
-    // חתונה: איסוף ראשון
     else if (customer.step === "wedding_pickup1") {
-      await supabase.from("customers").update({ pickup1_location: message }).eq("phone", phone972);
-
-      const who = customer.pickup_who;
-      if (who === "3") {
-        reply = "ומאיפה אוספים את הכלה? (עיר או כתובת כללית)";
-        nextStep = "wedding_pickup2";
-      } else {
-        reply = "מה שם האולם / גן האירועים ובאיזו עיר הוא נמצא? (לדוגמה: דימול באשדוד)";
-        nextStep = "destination";
-      }
-    }
-
-    // חתונה: איסוף שני (רק אם בחרו שניהם)
-    else if (customer.step === "wedding_pickup2") {
-      await supabase.from("customers").update({ pickup2_location: message }).eq("phone", phone972);
-
-      reply = "מה שם האולם / גן האירועים ובאיזו עיר הוא נמצא? (לדוגמה: דימול באשדוד)";
+      await supabase.from("customers").update({ pickup_location: message }).eq("phone", phone972);
+      reply = "מה שם האולם / גן האירועים ובאיזו עיר הוא נמצא?";
       nextStep = "destination";
     }
-
-    // לא חתונה: איסוף
     else if (customer.step === "pickup") {
       await supabase.from("customers").update({ pickup_location: message }).eq("phone", phone972);
-
-      reply = "לאן נוסעים? (שם האולם / עיר יעד)";
+      reply = "מה שם האולם / עיר יעד?";
       nextStep = "destination";
     }
-
-    // יעד/אולם
     else if (customer.step === "destination") {
       await supabase.from("customers").update({ destination: message }).eq("phone", phone972);
-
-      reply =
-        "מעולה 🙌 קיבלתי את כל הפרטים.\n\n" +
-        "לצורך הכנת הצעת מחיר מסודרת, על איזה שם לרשום? 😊";
+      reply = "על איזה שם להכין את הצעת המחיר? 😊";
       nextStep = "name";
     }
-
-    // שם להצעת מחיר + הודעה סופית ארוכה
     else if (customer.step === "name") {
       await supabase.from("customers").update({ customer_name: message }).eq("phone", phone972);
 
-      // שליפה מחדש כדי להיות בטוחים שהכל עדכני
       const { data: freshCustomer } = await supabase
         .from("customers")
         .select("*")
@@ -312,54 +227,33 @@ app.post("/webhook", async (req, res) => {
       const name = freshCustomer?.customer_name || message;
       const date = freshCustomer?.event_date || "";
       const eventType = freshCustomer?.event_type || "";
+      const pickupText = freshCustomer?.pickup_location || "";
       const destination = freshCustomer?.destination || "";
+      const photos = eventType === "חתונה" ? freshCustomer?.photos || "לא היה" : undefined;
 
-      let pickupText = "";
-      if (eventType === "חתונה") {
-        const who = freshCustomer?.pickup_who;
-        const p1 = freshCustomer?.pickup1_location || "";
-        const p2 = freshCustomer?.pickup2_location || "";
+      const [summary, followup] = buildFinalMessages({ name, date, eventType, pickupText, destination, photos });
 
-        if (who === "1") pickupText = `איסוף חתן: ${p1}`;
-        else if (who === "2") pickupText = `איסוף כלה: ${p1}`;
-        else pickupText = `איסוף חתן: ${p1}\n📍 איסוף כלה: ${p2}`;
-      } else {
-        pickupText = `איסוף: ${freshCustomer?.pickup_location || ""}`;
-      }
+      // שליחת שתי הודעות נפרדות
+      try { await sendGreenMessage(chatId, summary); } catch(e){console.error(e);}
+      try { await sendGreenMessage(chatId, followup); } catch(e){console.error(e);}
 
-      reply = buildFinalMessage({ name, date, eventType, pickupText, destination });
       nextStep = "done";
+      return res.status(200).json({ ok: true });
     }
-
     else if (customer.step === "done") {
-      reply =
-        "כבר קיבלנו את הפרטים ✅\n" +
-        "אם תרצה להתחיל מחדש כתוב: התחלה";
+      reply = "כבר קיבלנו את הפרטים ✅ אם תרצה להתחיל מחדש כתוב: התחלה";
       nextStep = "done";
     }
-
     else {
       reply = "היי 🙌 כתוב 'התחלה' כדי להתחיל.";
       nextStep = "start";
     }
 
-    // ✅ עדכון שלב
+    // עדכון שלב
     await supabase.from("customers").update({ step: nextStep }).eq("phone", phone972);
 
-    // ✅ לא לשלוח הודעה ריקה
-    if (!reply || !reply.trim()) {
-      console.log("⚠️ No reply text generated. Skipping send.");
-      return res.status(200).json({ ok: true, skipped: "empty reply" });
-    }
-
-    // ✅ שליחה ל-Green API
-    try {
-      await sendGreenMessage(chatId, reply);
-      console.log("✅ Sent reply:", reply);
-    } catch (e) {
-      const status = e?.response?.status;
-      const data = e?.response?.data;
-      console.error("❌ Green API error:", status, data || e.message);
+    if (reply && reply.trim()) {
+      try { await sendGreenMessage(chatId, reply); } catch(e){console.error(e);}
     }
 
     return res.status(200).json({ ok: true });
