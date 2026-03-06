@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const GREEN_API_URL = process.env.GREEN_API_URL; // לדוגמה: https://7105.api.greenapi.com
+const GREEN_API_URL = process.env.GREEN_API_URL;
 const GREEN_API_TOKEN = process.env.GREEN_API_TOKEN;
 const GREEN_INSTANCE_ID = process.env.GREEN_INSTANCE_ID;
 
@@ -54,48 +54,37 @@ async function sendGreenMessage(chatId, message) {
 function eventFromChoice(text) {
   const t = String(text || "").trim();
   switch (t) {
-    case "1":
-      return "חתונה";
-    case "2":
-      return "בר/בת מצווה";
-    case "3":
-      return "יום הולדת";
-    case "4":
-      return "נשף";
-    case "5":
-      return "אירוע מיוחד";
-    case "6":
-      return "נציג";
-    default:
-      return t;
+    case "1": return "חתונה יוקרתית 💍";
+    case "2": return "בר/בת מצווה מהסרטים 🎧";
+    case "3": return "יום הולדת VIP 🎂";
+    case "4": return "נשף סיום נוצץ 🎓";
+    case "5": return "אירוע מיוחד ⭐";
+    case "6": return "נציג";
+    default: return t;
   }
 }
 
-function buildFinalMessages({ name, date, eventType, pickupText, destination, photos }) {
-  // הודעה ראשונה – סיכום ההזמנה
+function buildFinalMessages({ name }) {
+  // הודעה ראשונה – פינוקים (ללא כיבוד קל)
   const summary = 
-    `🎉 שלום ${name}!\n\n` +
-    `תודה שפניתם ל-Eden Limousine 🚘✨\n\n` +
-    `📅 תאריך האירוע: ${date}\n` +
-    `🎈 סוג האירוע: ${eventType}\n` +
-    `📍 איסוף: ${pickupText}\n` +
-    (destination ? `🏛 יעד/הורדה: ${destination}\n` : "") +
-    (photos !== undefined ? `האם היו צילומים לאירוע? ${photos}\n` : "") +
-    `\nבין השירותים שלנו:\n` +
-    `- 2 מסכי צפייה\n` +
-    `- אינטרנט מהיר\n` +
-    `- קריוקי מהנה\n` +
-    `- שתייה קלה ומוגזת\n` +
-    `- צילום סושיאל בלימוזינה\n` +
-    `- נהג צמוד\n` +
-    `- קישוט ידיות הרכב`;
+    `נעים מאוד, **${name}**! 👋 איזה כיף שיש לנו את כל הפרטים.\n\n` +
+    `שתדע מה מחכה לכם בנסיעה המלכותית... 💎 רמה של 5 כוכבים! ⭐⭐⭐⭐⭐\n\n` +
+    `**מה מחכה לכם בתוך הלימוזינה המפוארת שלנו?** 🥂🍾\n\n` +
+    `* 🍸 **אלכוהול חופשי ואיכותי** – וודקה, וויסקי ושמפניה קרה לאורך כל הדרך!\n` +
+    `* 🤳 **צילום סושיאל (BTS)** – הנהג שלנו מתעד לכם רגעים מטורפים מהנסיעה לסטורי מושלם!\n` +
+    `* 🥤 **בר שתייה** – שתייה קלה ומים מינרליים קרים.\n` +
+    `* 🎶 **מערכת סאונד מטורפת** – בלוטוס פתוח למוזיקה שלכם.\n` +
+    `* ✨ **תאורת LED ואווירה** – מועדון פרטי על גלגלים.\n` +
+    `* 🛋️ **נוחות מקסימלית** – מושבי עור יוקרתיים ומרווחים.\n` +
+    `* 🤫 **פרטיות מלאה** – חלונות מושחרים ומחיצה ביניכם לבין הנהג.`;
 
-  // הודעה שנייה – קריאה לעקוב + נציג
+  // הודעה שנייה – רשתות וחזרה של נציג
   const followup = 
-    `📸 עקוב אחרינו ברשתות החברתיות:\n` +
-    `Instagram: https://www.instagram.com/edenlimousine\n` +
-    `TikTok: https://www.tiktok.com/@edenlimousine\n\n` +
-    `נציג מטעמנו יצור איתך קשר בקרוב 📞`;
+    `**רוצים לראות איך זה נראה בלייב? עקבו אחרינו!** 👇✨\n\n` +
+    `🌐 אתר: https://www.edenlimousine.co.il\n` +
+    `📸 אינסטגרם: https://www.instagram.com/edenlimousine\n` +
+    `🎥 טיקטוק: https://www.tiktok.com/@edenlimousine\n\n` +
+    `**${name}, נציג שלנו כבר עובר על הנתונים ויחזור אליך כאן בצ'אט עם מחיר שאי אפשר לסרב לו!** 💎🔥`;
 
   return [summary, followup];
 }
@@ -107,162 +96,102 @@ app.get("/", (req, res) => {
 app.post("/webhook", async (req, res) => {
   try {
     const payload = req.body;
-
-    if (payload?.typeWebhook !== "incomingMessageReceived") {
-      return res.status(200).json({ ok: true, ignored: "not incomingMessageReceived" });
-    }
+    if (payload?.typeWebhook !== "incomingMessageReceived") return res.status(200).send();
 
     const chatId = payload?.senderData?.chatId;
-    if (!chatId || chatId.includes("@g.us")) {
-      return res.status(200).json({ ok: true, ignored: "group or no chatId" });
-    }
+    if (!chatId || chatId.includes("@g.us")) return res.status(200).send();
 
-    const senderRaw = payload?.senderData?.sender || payload?.senderData?.chatId || "";
+    const senderRaw = payload?.senderData?.sender || chatId;
     const phone972 = normalizeTo972(senderRaw);
     const message = extractText(payload).trim();
-    if (!message) return res.status(200).json({ ok: true, ignored: "no text message" });
+    if (!message) return res.status(200).send();
 
-    console.log("📩 Incoming:", { chatId, phone972, message });
-
-    // ===== חיפוש/יצירת לקוח =====
-    let { data: customer } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("phone", phone972)
-      .maybeSingle();
-
+    // חיפוש/יצירת לקוח
+    let { data: customer } = await supabase.from("customers").select("*").eq("phone", phone972).maybeSingle();
     if (!customer) {
-      const { data: newCustomer } = await supabase
-        .from("customers")
-        .insert([{ phone: phone972, step: "start" }])
-        .select()
-        .single();
-      customer = newCustomer;
+      const { data: newCust } = await supabase.from("customers").insert([{ phone: phone972, step: "start" }]).select().single();
+      customer = newCust;
     }
 
-    // ===== RESET =====
+    // RESET
     if (message === "התחלה") {
-      await supabase
-        .from("customers")
-        .update({
-          step: "start",
-          event_date: null,
-          event_type: null,
-          pickup_location: null,
-          destination: null,
-          customer_name: null,
-        })
-        .eq("phone", phone972);
-
+      await supabase.from("customers").update({ step: "start", event_date: null, event_type: null, pickup_location: null, destination: null, customer_name: null }).eq("phone", phone972);
       await sendGreenMessage(chatId, "מעולה 👌 מתחילים מחדש.\n\nמה התאריך של האירוע?");
-      return res.status(200).json({ ok: true, reset: true });
+      return res.status(200).send();
     }
 
     let reply = "";
     let nextStep = customer.step;
 
-    // ===== ניהול שלבים =====
     if (customer.step === "start") {
-      reply = "שלום וברכה! 👋\nמה התאריך של האירוע שלכם? (לדוגמה: 01/01/2026)";
+      reply = "היי! איזה כיף שפנית אלינו! 👋🎊\nאנחנו כאן כדי להפוך את היום שלכם לבלתי נשכח, בסטייל של הוליווד! 🎬🌟\n\n**מה התאריך של האירוע?** 🗓️💖";
       nextStep = "date";
-    }
+    } 
     else if (customer.step === "date") {
       await supabase.from("customers").update({ event_date: message }).eq("phone", phone972);
-      reply = "איזה סוג אירוע זה?\n1️⃣ חתונה 💍\n2️⃣ בר/בת מצווה 🎉\n3️⃣ יום הולדת 🎂\n4️⃣ נשף 🎓\n5️⃣ אירוע מיוחד ⭐\n6️⃣ נציג אנושי 📞";
+      reply = `תאריך מעולה! **${message}** – זמן מושלם לחגיגה יוקרתית. ☀️✨ רשמתי לי! ✅\n\n**מה אנחנו חוגגים?**\n1️⃣ חתונה יוקרתית 💍\n2️⃣ בר/בת מצווה מהסרטים 🎉\n3️⃣ יום הולדת VIP 🎂\n4️⃣ נשף סיום נוצץ 🎓\n5️⃣ אירוע מיוחד ⭐\n6️⃣ נציג אנושי 📞`;
       nextStep = "event";
     }
     else if (customer.step === "event") {
-      const eventType = eventFromChoice(message);
-      if (eventType === "נציג") {
+      const ev = eventFromChoice(message);
+      if (ev === "נציג") {
         reply = "מעולה 👌 נציג מטעמנו יחזור אליך בהקדם 📞";
         nextStep = "done";
       } else {
-        await supabase.from("customers").update({ event_type: eventType }).eq("phone", phone972);
-        if (eventType === "חתונה") {
-          reply = "מזל טוב! 🎉💍 מי אוספים?\n1️⃣ חתן\n2️⃣ כלה\n3️⃣ חתן וכלה";
+        await supabase.from("customers").update({ event_type: ev }).eq("phone", phone972);
+        if (ev.includes("חתונה")) {
+          reply = "קולולולו! מזל טוב! 🎉💍 שיהיה בשעה טובה!\n\n**את מי אנחנו אוספים?**\n1️⃣ רק את החתן 🤵‍♂️\n2️⃣ רק את הכלה 👰‍♀️\n3️⃣ איסוף משולב (גם חתן וגם כלה בנפרד) 🤵‍♂️↔️👰‍♀️";
           nextStep = "wedding_pickwho";
         } else {
-          reply = "מעולה 🙌 מאיפה האיסוף? (עיר או כתובת כללית)";
+          reply = "מעולה 🙌 מאיפה האיסוף? (עיר או כתובת)";
           nextStep = "pickup";
         }
       }
     }
     else if (customer.step === "wedding_pickwho") {
-      const choice = String(message).trim();
-      if (!["1","2","3"].includes(choice)) {
-        reply = "שלחו רק 1, 2 או 3 🙏";
-        nextStep = "wedding_pickwho";
-      } else {
-        await supabase.from("customers").update({ pickup_who: choice }).eq("phone", phone972);
-        reply = choice === "1" ? "איפה האיסוף של החתן?" :
-                choice === "2" ? "איפה האיסוף של הכלה?" :
-                "איפה האיסוף של החתן והכלה?";
-        nextStep = "wedding_pickup1";
-      }
+      await supabase.from("customers").update({ pickup_who: message }).eq("phone", phone972);
+      reply = (message === "3") ? "**OMG!!!** 🥂✨ איסוף משולב?? מטורף!\n\nמאיפה אוספים את החתן?" : "מאיפה האיסוף?";
+      nextStep = "wedding_pickup1";
     }
     else if (customer.step === "wedding_pickup1") {
       await supabase.from("customers").update({ pickup_location: message }).eq("phone", phone972);
-      reply = "מה שם האולם / גן האירועים ובאיזו עיר הוא נמצא?";
+      reply = "איפה מתוכננים להיות הצילומים? 📸🌟\n(או כתבו 'עדיין לא יודעים')";
+      nextStep = "photos";
+    }
+    else if (customer.step === "photos") {
+      await supabase.from("customers").update({ photos: message }).eq("phone", phone972);
+      reply = "ומה שם האולם ובאיזו עיר הוא נמצא? 🏰🥂";
       nextStep = "destination";
     }
     else if (customer.step === "pickup") {
       await supabase.from("customers").update({ pickup_location: message }).eq("phone", phone972);
-      reply = "מה שם האולם / עיר יעד?";
+      reply = "מה שם האולם / עיר יעד? 🏰🥂";
       nextStep = "destination";
     }
     else if (customer.step === "destination") {
       await supabase.from("customers").update({ destination: message }).eq("phone", phone972);
-      reply = "על איזה שם להכין את הצעת המחיר? 😊";
+      reply = "אנחנו כבר ממש בסוף! על איזה שם להכין את הצעת המחיר? ✍️✨";
       nextStep = "name";
     }
     else if (customer.step === "name") {
-      await supabase.from("customers").update({ customer_name: message }).eq("phone", phone972);
-
-      const { data: freshCustomer } = await supabase
-        .from("customers")
-        .select("*")
-        .eq("phone", phone972)
-        .maybeSingle();
-
-      const name = freshCustomer?.customer_name || message;
-      const date = freshCustomer?.event_date || "";
-      const eventType = freshCustomer?.event_type || "";
-      const pickupText = freshCustomer?.pickup_location || "";
-      const destination = freshCustomer?.destination || "";
-      const photos = eventType === "חתונה" ? freshCustomer?.photos || "לא היה" : undefined;
-
-      const [summary, followup] = buildFinalMessages({ name, date, eventType, pickupText, destination, photos });
-
-      // שליחת שתי הודעות נפרדות
-      try { await sendGreenMessage(chatId, summary); } catch(e){console.error(e);}
-      try { await sendGreenMessage(chatId, followup); } catch(e){console.error(e);}
-
-      nextStep = "done";
-      return res.status(200).json({ ok: true });
+      await supabase.from("customers").update({ customer_name: message, step: "done" }).eq("phone", phone972);
+      const [summary, followup] = buildFinalMessages({ name: message });
+      await sendGreenMessage(chatId, summary);
+      await sendGreenMessage(chatId, followup);
+      return res.status(200).send();
     }
     else if (customer.step === "done") {
-      reply = "כבר קיבלנו את הפרטים ✅ אם תרצה להתחיל מחדש כתוב: התחלה";
-      nextStep = "done";
-    }
-    else {
-      reply = "היי 🙌 כתוב 'התחלה' כדי להתחיל.";
-      nextStep = "start";
+      reply = "הפרטים אצלנו ✅ נציג יחזור אליך בקרוב. (לשינוי כתוב 'התחלה')";
     }
 
-    // עדכון שלב
     await supabase.from("customers").update({ step: nextStep }).eq("phone", phone972);
+    if (reply) await sendGreenMessage(chatId, reply);
 
-    if (reply && reply.trim()) {
-      try { await sendGreenMessage(chatId, reply); } catch(e){console.error(e);}
-    }
-
-    return res.status(200).json({ ok: true });
+    return res.status(200).send();
   } catch (err) {
-    console.error("❌ Webhook fatal error:", err.message);
-    return res.status(200).json({ ok: true });
+    console.error("❌ Webhook error:", err.message);
+    return res.status(200).send();
   }
 });
 
-app.listen(PORT, () => {
-  console.log("✅ Server running on port " + PORT);
-});
+app.listen(PORT, () => console.log("✅ Server running on port " + PORT));
