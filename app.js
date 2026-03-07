@@ -6,7 +6,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const app = express();
 app.use(express.json());
 
-// חיבור לשירותים (וודא שהם מוגדרים ב-Environment Variables ב-Render)
+// חיבור לשירותים
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -30,53 +30,59 @@ app.post("/webhook", async (req, res) => {
         if (payload?.typeWebhook !== "incomingMessageReceived") return res.sendStatus(200);
 
         const chatId = payload?.senderData?.chatId;
-        const phone = payload?.senderData?.sender || chatId;
+        // ניקוי מספר הטלפון כדי שיתאים לפורמט ב-Supabase
+        const phone = payload?.senderData?.sender.replace('@c.us', '') || ""; 
         const userMsg = payload?.messageData?.textMessageData?.textMessage || "";
 
         if (!userMsg) return res.sendStatus(200);
 
-        // 1. טיפול בלקוח ב-Supabase (תיקון שגיאת PGRST204)
+        // 1. חיפוש או יצירת לקוח בטבלה customers לפי השדות שלך
         let { data: customer } = await supabase.from("customers").select("*").eq("phone", phone).maybeSingle();
         
         if (!customer) {
-            console.log("Creating new customer record...");
-            const { data: newC, error: insErr } = await supabase.from("customers").insert([{ phone, data_json: {} }]).select().single();
+            console.log("יצירת רשומה חדשה ללקוח...");
+            const { data: newC, error: insErr } = await supabase.from("customers").insert([{ phone: phone, step: 'start' }]).select().single();
             if (insErr) throw insErr;
             customer = newC;
         }
 
-        const existingData = customer.data_json || {};
-
-        // 2. הפרומפט המדויק: יוקרתי, קצר ולא חופר
+        // 2. פרומפט ממוקד לשדות שלך: event_date, event_type, pickup_locatio, וכו'
         const prompt = `
-        אתה העוזר של "Eden Limousine". תהיה יוקרתי, תכליתי ואל תחפור.
-        המטרה: לאסוף פרטי הזמנה (תאריך, אירוע, איסוף חתן, איסוף כלה אם משולב, צילומים, אולם, שם).
+        אתה העוזר האישי של "Eden Limousine". תהיה קצר, יוקרתי ואל תחפור.
+        המטרה שלך היא לאסוף פרטים להזמנה בצורה עניינית.
         
-        הנחיות אישיות:
-        - בתחילת שיחה שאל רק: "שלום, במה אוכל לעזור לך היום?"
-        - אל תיתן נאומים. שאל שאלה אחת בכל פעם.
-        - אם ביקשו "איסוף משולב", שאל בנפרד על חתן ואז על כלה.
-        - בסיום הכל, תן סיכום קצר וציין שיש אלכוהול חופשי וצילום BTS.
+        מידע קיים בטבלה: ${JSON.stringify(customer)}
+        הודעת לקוח: "${userMsg}"
         
-        מידע קיים: ${JSON.stringify(existingData)}
-        הודעה מהלקוח: "${userMsg}"
-        
-        החזר JSON בלבד: {"reply": "טקסט קצר", "new_data": {}}
+        הנחיות:
+        - חלץ מידע לשדות הבאים בלבד: event_date, event_type, pickup_locatio, destination, customer_name.
+        - אם חסר מידע, שאל שאלה אחת קצרה (למשל: "מה תאריך האירוע?").
+        - אם מדובר ב"איסוף משולב", שאל בנפרד על מיקום החתן ומיקום הכלה.
+        - בסיום, ציין שיש אלכוהול חופשי וצילום BTS לסטורי.
+
+        החזר JSON בלבד:
+        {
+          "reply": "תשובה קצרה ללקוח",
+          "updates": {
+            "event_date": "ערך שחולץ או null",
+            "event_type": "ערך שחולץ או null",
+            "pickup_locatio": "ערך שחולץ או null",
+            "step": "שם השלב הנוכחי"
+          }
+        }
         `;
 
         const result = await model.generateContent(prompt);
-        const rawText = result.response.text().replace(/```json|```/g, "").trim();
-        const aiData = JSON.parse(rawText);
+        const aiData = JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
 
-        // 3. עדכון בטוח
-        const updatedJson = { ...existingData, ...aiData.new_data };
-        await supabase.from("customers").update({ data_json: updatedJson }).eq("phone", phone);
+        // 3. עדכון הטבלה לפי השדות הספציפיים שקיימים אצלך
+        await supabase.from("customers").update(aiData.updates).eq("phone", phone);
 
         await sendMsg(chatId, aiData.reply);
         res.sendStatus(200);
 
     } catch (err) {
-        console.error("Critical Error:", err);
+        console.error("שגיאה קריטית:", err);
         res.sendStatus(200);
     }
 });
