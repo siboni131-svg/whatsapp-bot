@@ -1,7 +1,6 @@
 const express = require("express");
 const { createClient } = require("@supabase/supabase-js");
 const axios = require("axios");
-const OpenAI = require("openai");
 
 const app = express();
 app.use(express.json());
@@ -9,7 +8,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // ===== ENV =====
-
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -17,44 +15,21 @@ const GREEN_API_URL = process.env.GREEN_API_URL;
 const GREEN_API_TOKEN = process.env.GREEN_API_TOKEN;
 const GREEN_INSTANCE_ID = process.env.GREEN_INSTANCE_ID;
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("❌ Missing Supabase ENV");
-  process.exit(1);
-}
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY
-});
-
-// ===== helpers =====
+// ===== HELPERS =====
 
 function normalizeTo972(raw) {
-
   if (!raw) return "";
-
   let phone = String(raw).trim();
-
-  if (phone.includes("@")) {
-    phone = phone.split("@")[0];
-  }
-
+  if (phone.includes("@")) phone = phone.split("@")[0];
   phone = phone.replace(/\D/g, "");
-
   if (phone.startsWith("972")) return phone;
-
-  if (phone.startsWith("0")) {
-    return "972" + phone.slice(1);
-  }
-
+  if (phone.startsWith("0")) return "972" + phone.slice(1);
   return phone;
 }
 
 function extractText(payload) {
-
   return (
     payload?.messageData?.textMessageData?.textMessage ||
     payload?.messageData?.extendedTextMessageData?.text ||
@@ -63,9 +38,7 @@ function extractText(payload) {
 }
 
 async function sendGreenMessage(chatId, message) {
-
-  const url =
-    `${GREEN_API_URL}/waInstance${GREEN_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`;
+  const url = `${GREEN_API_URL}/waInstance${GREEN_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`;
 
   return axios.post(url, {
     chatId,
@@ -73,64 +46,54 @@ async function sendGreenMessage(chatId, message) {
   });
 }
 
-// ===== AI =====
+// ===== FAQ =====
 
-async function askAI(message) {
+function handleFAQ(message) {
 
-  try {
+  const text = message.toLowerCase();
 
-    const response = await openai.responses.create({
-
-      model: "gpt-4.1-mini",
-
-      input: `
-אתה נציג שירות של Eden Limousine.
-
-החברה מספקת לימוזינות לאירועים:
-
-חתונות
-בר מצווה
-ימי הולדת
-נשפים
-
-בלימוזינה יש:
-
-2 מסכים
-קריוקי
-שמפניה
-וודקה
-שתייה קלה
-קרח
-צילום סושיאל
-נהג צמוד
-
-ענה בעברית בלבד.
-ענה קצר וברור.
-
-שאלת הלקוח:
-${message}
-`
-
-    });
-
-    return response.output_text;
-
-  } catch (err) {
-
-    console.error("AI error:", err.message);
-
-    return "מצטערים, כרגע יש עומס במערכת. נציג יחזור אליך בהקדם.";
-
+  if (text.includes("כמה מקומות")) {
+    return `בלימוזינה שלנו יש מקום לעד 8 נוסעים בנוחות 🚘
+כך שאפשר לנסוע יחד עם חברים או משפחה ולהתחיל את החגיגה כבר בדרך לאירוע 🎉`;
   }
+
+  if (text.includes("כמה עולה") || text.includes("מחיר")) {
+    return `המחיר משתנה לפי תאריך האירוע, מיקום האיסוף והיעד.
+
+נשמח להכין עבורכם הצעת מחיר מסודרת 😊
+מה התאריך של האירוע?`;
+  }
+
+  if (text.includes("קריוקי")) {
+    return `כן 😊 בלימוזינה יש מערכת קריוקי ומסכים כך שתוכלו לשיר וליהנות מהדרך לאירוע 🎤`;
+  }
+
+  if (text.includes("שתייה")) {
+    return `כן 🙂 בלימוזינה מחכה לכם שמפניה / וודקה, XL, שתייה קלה וקרח 🍾🥤`;
+  }
+
+  if (text.includes("מוזיקה")) {
+    return `בטח 🎶 יש מערכת מוזיקה איכותית ואפשר לחבר טלפון ולשמוע את המוזיקה שאתם אוהבים`;
+  }
+
+  if (text.includes("קישוט")) {
+    return `כן 🎀 אנחנו מקשטים את הרכב במיוחד לכבוד האירוע והקישוט כלול במחיר`;
+  }
+
+  if (text.includes("צילומים")) {
+    return `כן 📸 בדרך לאולם עושים עצירות לצילומים כך שתוכלו לקבל תמונות מיוחדות מהיום המרגש שלכם`;
+  }
+
+  return null;
 }
 
-// ===== test =====
+// ===== START SERVER =====
 
 app.get("/", (req, res) => {
-  res.send("Server running");
+  res.send("השרת עובד ✅");
 });
 
-// ===== webhook =====
+// ===== WEBHOOK =====
 
 app.post("/webhook", async (req, res) => {
 
@@ -139,31 +102,37 @@ app.post("/webhook", async (req, res) => {
     const payload = req.body;
 
     if (payload?.typeWebhook !== "incomingMessageReceived") {
-      return res.sendStatus(200);
+      return res.status(200).json({ ok: true });
     }
 
     const chatId = payload?.senderData?.chatId;
 
     if (!chatId || chatId.includes("@g.us")) {
-      return res.sendStatus(200);
+      return res.status(200).json({ ok: true });
     }
 
-    const senderRaw =
-      payload?.senderData?.sender ||
-      payload?.senderData?.chatId ||
-      "";
-
+    const senderRaw = payload?.senderData?.sender;
     const phone972 = normalizeTo972(senderRaw);
 
     const message = extractText(payload).trim();
 
     if (!message) {
-      return res.sendStatus(200);
+      return res.status(200).json({ ok: true });
     }
 
-    console.log("📩 Incoming:", phone972, message);
+    // ===== FAQ CHECK =====
 
-    // ===== find customer =====
+    const faqReply = handleFAQ(message);
+
+    if (faqReply) {
+
+      await sendGreenMessage(chatId, faqReply);
+
+      return res.status(200).json({ ok: true });
+
+    }
+
+    // ===== CUSTOMER =====
 
     let { data: customer } = await supabase
       .from("customers")
@@ -180,21 +149,26 @@ app.post("/webhook", async (req, res) => {
         .single();
 
       customer = newCustomer;
-    }
 
-    // ===== flow =====
+    }
 
     let reply = "";
     let nextStep = customer.step;
 
+    // ===== FLOW =====
+
     if (customer.step === "start") {
 
-      reply =
-        "שלום וברכה 👋\n\n" +
-        "ברוכים הבאים ל-Eden Limousine 🚘\n\n" +
-        "מה התאריך של האירוע?";
+      reply = `שלום וברכה 👋
+
+תודה שפנית ל-Eden Limousine 🚘✨
+
+נשמח לקחת חלק ביום המיוחד שלכם ולהפוך את הנסיעה לחוויה בלתי נשכחת – ממש כמו בסרט 🎬
+
+מה התאריך של האירוע? 📅`;
 
       nextStep = "date";
+
     }
 
     else if (customer.step === "date") {
@@ -204,26 +178,36 @@ app.post("/webhook", async (req, res) => {
         .update({ event_date: message })
         .eq("phone", phone972);
 
-      reply =
-        "איזה סוג אירוע זה?\n\n" +
-        "1 חתונה\n" +
-        "2 בר מצווה\n" +
-        "3 יום הולדת\n" +
-        "4 נשף";
+      reply = `מזל טוב! 🤵👰💍
 
-      nextStep = "event";
+את מי אוספים?
+
+1️⃣ חתן
+2️⃣ כלה
+3️⃣ חתן וכלה`;
+
+      nextStep = "pickupWho";
+
     }
 
-    else if (customer.step === "event") {
+    else if (customer.step === "pickupWho") {
 
-      await supabase
-        .from("customers")
-        .update({ event_type: message })
-        .eq("phone", phone972);
+      if (message === "1") {
 
-      reply = "מאיפה האיסוף?";
+        reply = "מאיפה אוספים את החתן? 📍";
+
+      } else if (message === "2") {
+
+        reply = "מאיפה אוספים את הכלה? 📍";
+
+      } else {
+
+        reply = "מאיפה אוספים את החתן? 📍";
+
+      }
 
       nextStep = "pickup";
+
     }
 
     else if (customer.step === "pickup") {
@@ -233,9 +217,10 @@ app.post("/webhook", async (req, res) => {
         .update({ pickup_location: message })
         .eq("phone", phone972);
 
-      reply = "לאן נוסעים? (שם האולם או העיר)";
+      reply = "מה שם האולם או גן האירועים? 🏛";
 
       nextStep = "destination";
+
     }
 
     else if (customer.step === "destination") {
@@ -248,32 +233,24 @@ app.post("/webhook", async (req, res) => {
       reply = "על איזה שם לרשום את ההזמנה?";
 
       nextStep = "name";
+
     }
 
     else if (customer.step === "name") {
 
       await supabase
         .from("customers")
-        .update({
-          customer_name: message
-        })
+        .update({ customer_name: message })
         .eq("phone", phone972);
 
-      reply =
-        "תודה רבה 🙌\n\n" +
-        "קיבלנו את הפרטים שלך.\n" +
-        "נציג יחזור אליך בהקדם.";
+      reply = `תודה רבה ${message}! 🙌
+
+הפרטים נקלטו במערכת Eden Limousine 🚘✨
+
+נציג מטעמנו יצור איתך קשר בהקדם 📞`;
 
       nextStep = "done";
-    }
 
-    else if (customer.step === "done") {
-
-      const aiReply = await askAI(message);
-
-      await sendGreenMessage(chatId, aiReply);
-
-      return res.sendStatus(200);
     }
 
     await supabase
@@ -283,20 +260,22 @@ app.post("/webhook", async (req, res) => {
 
     await sendGreenMessage(chatId, reply);
 
-    res.sendStatus(200);
+    res.status(200).json({ ok: true });
 
-  } catch (err) {
-
-    console.error("Webhook error:", err.message);
-
-    res.sendStatus(200);
   }
-});
 
-// ===== start =====
+  catch (err) {
+
+    console.error(err);
+
+    res.status(200).json({ ok: true });
+
+  }
+
+});
 
 app.listen(PORT, () => {
 
-  console.log("Server running on port", PORT);
+  console.log("Server running on port " + PORT);
 
 });
