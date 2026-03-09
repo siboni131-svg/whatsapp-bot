@@ -8,6 +8,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // ===== ENV =====
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -38,6 +39,12 @@ function extractText(payload) {
 }
 
 async function sendGreenMessage(chatId, message) {
+
+  if (!message || !message.trim()) {
+    console.log("⚠️ message empty - skip send");
+    return;
+  }
+
   const url = `${GREEN_API_URL}/waInstance${GREEN_INSTANCE_ID}/sendMessage/${GREEN_API_TOKEN}`;
 
   return axios.post(url, {
@@ -54,40 +61,45 @@ function handleFAQ(message) {
 
   if (text.includes("כמה מקומות")) {
     return `בלימוזינה שלנו יש מקום לעד 8 נוסעים בנוחות 🚘
-כך שאפשר לנסוע יחד עם חברים או משפחה ולהתחיל את החגיגה כבר בדרך לאירוע 🎉`;
+כך שאפשר להתחיל את החגיגה כבר בדרך לאירוע 🎉`;
   }
 
   if (text.includes("כמה עולה") || text.includes("מחיר")) {
-    return `המחיר משתנה לפי תאריך האירוע, מיקום האיסוף והיעד.
+    return `המחיר משתנה לפי תאריך האירוע ומיקום האיסוף.
 
-נשמח להכין עבורכם הצעת מחיר מסודרת 😊
+נשמח להכין עבורכם הצעת מחיר 😊
 מה התאריך של האירוע?`;
   }
 
   if (text.includes("קריוקי")) {
-    return `כן 😊 בלימוזינה יש מערכת קריוקי ומסכים כך שתוכלו לשיר וליהנות מהדרך לאירוע 🎤`;
+    return `כן 😊 בלימוזינה יש מערכת קריוקי ומסכים 🎤`;
   }
 
   if (text.includes("שתייה")) {
-    return `כן 🙂 בלימוזינה מחכה לכם שמפניה / וודקה, XL, שתייה קלה וקרח 🍾🥤`;
+    return `כן 🙂 בלימוזינה מחכה לכם:
+
+🍾 שמפניה / וודקה
+🥤 XL
+🥂 שתייה קלה
+🧊 קרח`;
   }
 
   if (text.includes("מוזיקה")) {
-    return `בטח 🎶 יש מערכת מוזיקה איכותית ואפשר לחבר טלפון ולשמוע את המוזיקה שאתם אוהבים`;
+    return `בטח 🎶 יש מערכת מוזיקה איכותית ואפשר לחבר טלפון`;
   }
 
   if (text.includes("קישוט")) {
-    return `כן 🎀 אנחנו מקשטים את הרכב במיוחד לכבוד האירוע והקישוט כלול במחיר`;
+    return `כן 🎀 קישוט הרכב כלול במחיר`;
   }
 
   if (text.includes("צילומים")) {
-    return `כן 📸 בדרך לאולם עושים עצירות לצילומים כך שתוכלו לקבל תמונות מיוחדות מהיום המרגש שלכם`;
+    return `כן 📸 עושים עצירות לצילומים בדרך לאולם`;
   }
 
   return null;
 }
 
-// ===== START SERVER =====
+// ===== ROOT =====
 
 app.get("/", (req, res) => {
   res.send("השרת עובד ✅");
@@ -120,7 +132,9 @@ app.post("/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // ===== FAQ CHECK =====
+    console.log("📩 Incoming:", message);
+
+    // ===== FAQ =====
 
     const faqReply = handleFAQ(message);
 
@@ -163,7 +177,8 @@ app.post("/webhook", async (req, res) => {
 
 תודה שפנית ל-Eden Limousine 🚘✨
 
-נשמח לקחת חלק ביום המיוחד שלכם ולהפוך את הנסיעה לחוויה בלתי נשכחת – ממש כמו בסרט 🎬
+נשמח לקחת חלק ביום המיוחד שלכם
+ולהפוך את הנסיעה לחוויה בלתי נשכחת 🎬
 
 מה התאריך של האירוע? 📅`;
 
@@ -192,19 +207,8 @@ app.post("/webhook", async (req, res) => {
 
     else if (customer.step === "pickupWho") {
 
-      if (message === "1") {
-
-        reply = "מאיפה אוספים את החתן? 📍";
-
-      } else if (message === "2") {
-
-        reply = "מאיפה אוספים את הכלה? 📍";
-
-      } else {
-
-        reply = "מאיפה אוספים את החתן? 📍";
-
-      }
+      reply = `מאיפה האיסוף? 📍
+(עיר או כתובת כללית)`;
 
       nextStep = "pickup";
 
@@ -266,7 +270,7 @@ app.post("/webhook", async (req, res) => {
 
   catch (err) {
 
-    console.error(err);
+    console.error("Webhook error:", err.message);
 
     res.status(200).json({ ok: true });
 
@@ -275,7 +279,5 @@ app.post("/webhook", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-
   console.log("Server running on port " + PORT);
-
 });
