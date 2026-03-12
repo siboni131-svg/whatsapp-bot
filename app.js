@@ -54,10 +54,8 @@ function extractText(payload) {
 async function sendGreenMessage(chatId, message) {
 
   if (!message || !message.trim()) {
-
     console.log("⚠️ message empty - skip send");
     return;
-
   }
 
   const url =
@@ -89,6 +87,7 @@ function handleFAQ(message) {
 
   if (text.includes("שתייה")) {
     return `כן 🙂 בלימוזינה מחכה לכם:
+
 🍾 שמפניה
 🥤 שתייה קלה
 🧊 קרח`;
@@ -168,7 +167,6 @@ app.post("/webhook", async (req, res) => {
 
     let reply = "";
     let nextStep = customer.step;
-
 
 
     // ===== FLOW =====
@@ -316,17 +314,24 @@ app.post("/webhook", async (req, res) => {
         .maybeSingle();
 
 
+      const groom = freshCustomer?.pickup_groom || "לא הוזן";
+      const bride = freshCustomer?.pickup_bride || "לא הוזן";
+      const photos = freshCustomer?.photo_location || "לא הוזן";
+      const hall = freshCustomer?.destination || "לא הוזן";
+      const date = freshCustomer?.event_date || "לא הוזן";
+
+
       reply = `נעים מאוד, ${message}! 👋  
 איזה כיף שיש לנו את כל הפרטים.
 
 ━━━━━━━━━━━━━━━
 
-📅 תאריך האירוע: ${freshCustomer.event_date}  
-📍 איסוף חתן: ${freshCustomer.pickup_groom}  
-📍 איסוף כלה: ${freshCustomer.pickup_bride}  
+📅 תאריך האירוע: ${date}  
+📍 איסוף חתן: ${groom}  
+📍 איסוף כלה: ${bride}  
 
-📸 לוקיישן לצילומים: ${freshCustomer.photo_location}  
-🏛 יעד: ${freshCustomer.destination}
+📸 לוקיישן לצילומים: ${photos}  
+🏛 יעד: ${hall}
 
 ━━━━━━━━━━━━━━━
 
@@ -358,7 +363,18 @@ app.post("/webhook", async (req, res) => {
 
 ━━━━━━━━━━━━━━━
 
-נציג מטעמנו יחזור אליכם בהקדם לאישור ההזמנה ולסגירת הפרטים 📞✨`;
+נציג מטעמנו יחזור אליכם בהקדם לאישור ההזמנה ולסגירת הפרטים 📞✨
+
+מוזמנים גם לעקוב אחרינו ברשתות ולהתרשם מעוד אירועים ✨
+
+📸 אינסטגרם  
+https://www.instagram.com/edenlimousine
+
+🎵 טיקטוק  
+https://www.tiktok.com/@edenlimousine
+
+🌐 האתר שלנו  
+https://edenlimousine.co.il`;
 
       nextStep = "done";
 
