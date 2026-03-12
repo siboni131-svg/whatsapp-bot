@@ -315,9 +315,9 @@ app.post("/webhook", async (req, res) => {
       const photos = freshCustomer?.pickup_location || "לא הוזן";
       const hall = freshCustomer?.destination || "לא הוזן";
       const date = freshCustomer?.event_date || "לא הוזן";
-
-
-      reply = `נעים מאוד, ${message}! 👋  
+const eventType = freshCustomer?.event_type || "לא הוזן";
+     
+      reply = `נעים מאוד, ${message}! 👋 
 איזה כיף שיש לנו את כל הפרטים.
 
 ━━━━━━━━━━━━━━━
