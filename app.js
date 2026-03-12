@@ -20,7 +20,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 // ===== HELPERS =====
 
 function normalizeTo972(raw) {
-
   if (!raw) return "";
 
   let phone = String(raw).trim();
@@ -34,12 +33,10 @@ function normalizeTo972(raw) {
   if (phone.startsWith("0")) return "972" + phone.slice(1);
 
   return phone;
-
 }
 
 
 function extractText(payload) {
-
   return (
     payload?.messageData?.textMessageData?.textMessage ||
     payload?.messageData?.extendedTextMessageData?.text ||
@@ -47,7 +44,6 @@ function extractText(payload) {
     payload?.messageData?.conversation ||
     ""
   );
-
 }
 
 
@@ -94,16 +90,13 @@ function handleFAQ(message) {
   }
 
   return null;
-
 }
 
 
 // ===== ROOT =====
 
 app.get("/", (req, res) => {
-
   res.send("השרת עובד ✅");
-
 });
 
 
@@ -126,7 +119,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     const senderRaw = payload?.senderData?.sender;
-
     const phone972 = normalizeTo972(senderRaw);
 
     const message = extractText(payload).trim();
@@ -138,12 +130,9 @@ app.post("/webhook", async (req, res) => {
     const faqReply = handleFAQ(message);
 
     if (faqReply) {
-
       await sendGreenMessage(chatId, faqReply);
       return res.status(200).json({ ok: true });
-
     }
-
 
     let { data: customer } = await supabase
       .from("customers")
@@ -164,20 +153,18 @@ app.post("/webhook", async (req, res) => {
 
     }
 
-
     let reply = "";
     let nextStep = customer.step;
 
 
     // ===== FLOW =====
 
-
     if (customer.step === "start") {
 
       reply = `שלום וברכה! 👋
 
 איזה כיף שפנית אלינו ל-Eden Limousine 🚘✨  
-אנחנו כאן כדי להפוך את היום שלכם לבלתי נשכח – בסטייל של הוליווד! 🎬🌟  
+אנחנו כאן כדי להפוך את היום שלכם לבלתי נשכח – בסטייל של הוליווד! 🎬🌟
 
 נשמח לקחת חלק ביום המיוחד שלכם.
 
@@ -215,6 +202,11 @@ app.post("/webhook", async (req, res) => {
 
     else if (customer.step === "event") {
 
+      await supabase
+        .from("customers")
+        .update({ event_type: message })
+        .eq("phone", phone972);
+
       reply = `קולולולו! מזל טוב! 🎉💍  
 שתהיה בשעה טובה! 🤵👰✨  
 
@@ -231,8 +223,12 @@ app.post("/webhook", async (req, res) => {
 
     else if (customer.step === "pickupWho") {
 
-      reply = `מאיפה אוספים את החתן? 🤵‍♂️📍  
-(עיר או כתובת כללית)`;
+      await supabase
+        .from("customers")
+        .update({ pickup_who: message })
+        .eq("phone", phone972);
+
+      reply = `מאיפה אוספים את החתן? 🤵‍♂️📍`;
 
       nextStep = "pickupGroom";
 
@@ -243,7 +239,7 @@ app.post("/webhook", async (req, res) => {
 
       await supabase
         .from("customers")
-        .update({ pickup_groom: message })
+        .update({ pickup1_location: message })
         .eq("phone", phone972);
 
       reply = `ומאיפה אוספים את הכלה? 👰‍♀️📍`;
@@ -257,7 +253,7 @@ app.post("/webhook", async (req, res) => {
 
       await supabase
         .from("customers")
-        .update({ pickup_bride: message })
+        .update({ pickup2_location: message })
         .eq("phone", phone972);
 
       reply = `נהדר! ✨
@@ -276,7 +272,7 @@ app.post("/webhook", async (req, res) => {
 
       await supabase
         .from("customers")
-        .update({ photo_location: message })
+        .update({ pickup_location: message })
         .eq("phone", phone972);
 
       reply = `מה שם האולם או גן האירועים ובאיזו עיר הוא נמצא? 🏛`;
@@ -314,9 +310,9 @@ app.post("/webhook", async (req, res) => {
         .maybeSingle();
 
 
-      const groom = freshCustomer?.pickup_groom || "לא הוזן";
-      const bride = freshCustomer?.pickup_bride || "לא הוזן";
-      const photos = freshCustomer?.photo_location || "לא הוזן";
+      const groom = freshCustomer?.pickup1_location || "לא הוזן";
+      const bride = freshCustomer?.pickup2_location || "לא הוזן";
+      const photos = freshCustomer?.pickup_location || "לא הוזן";
       const hall = freshCustomer?.destination || "לא הוזן";
       const date = freshCustomer?.event_date || "לא הוזן";
 
@@ -338,34 +334,17 @@ app.post("/webhook", async (req, res) => {
 שתדעו מה מחכה לכם בנסיעה המלכותית שלנו... 💎  
 חוויה ברמה של 5 כוכבים! ⭐⭐⭐⭐⭐
 
-מה מחכה לכם בתוך הלימוזינה המפוארת שלנו? 🥂🍾
-
 🍸 אלכוהול חופשי ואיכותי  
-וודקה, וויסקי ושמפניה קרה לאורך כל הדרך.
-
 🤳 צילום סושיאל (BTS)  
-הנהג מתעד רגעים מיוחדים מהנסיעה לסטורי מושלם.
-
 🥤 בר שתייה  
-שתייה קלה ומים מינרליים קרים.
-
 🎶 מערכת סאונד מטורפת  
-בלוטוס פתוח למוזיקה שלכם.
-
 ✨ תאורת LED ואווירה  
-מועדון פרטי על גלגלים.
-
 🛋 מושבי עור יוקרתיים  
-נוחות מקסימלית ומרחב מפנק.
-
-🤫 פרטיות מלאה  
-חלונות מושחרים ומחיצה ביניכם לבין הנהג.
+🤫 פרטיות מלאה
 
 ━━━━━━━━━━━━━━━
 
-נציג מטעמנו יחזור אליכם בהקדם לאישור ההזמנה ולסגירת הפרטים 📞✨
-
-מוזמנים גם לעקוב אחרינו ברשתות ולהתרשם מעוד אירועים ✨
+נציג מטעמנו יחזור אליכם בהקדם לאישור ההזמנה 📞✨
 
 📸 אינסטגרם  
 https://www.instagram.com/edenlimousine
